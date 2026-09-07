@@ -42,16 +42,48 @@ def _pending_sessions(schedule: dict, manifest: dict, now: datetime) -> list[dic
         if record.get("status") == "complete"
     }
 
-    pending: list[dict] = []
-    cutoff = timedelta(hours=config.session_completion_buffer_hours)
+    sessions = schedule.get("sessions", [])
 
-    for item in schedule.get("sessions", []):
-        key = item.get("key")
-        session_date = _parse_dt(item.get("session_date"))
-        if not key or session_date is None:
+    # A weekend becomes actionable only after its Race has finished
+    # and the scheduler buffer has elapsed.
+    race_dates: dict[tuple[object, object], datetime] = {}
+
+    for item in sessions:
+        if item.get("session_type") != "R":
             continue
 
-        if session_date + cutoff > now:
+        year = item.get("year")
+        round_number = item.get("round_number")
+        race_date = _parse_dt(item.get("session_date"))
+
+        if year is None or round_number is None or race_date is None:
+            continue
+
+        race_dates[(year, round_number)] = race_date
+
+    pending: list[dict] = []
+    cutoff = timedelta(hours=config.race_completion_buffer_hours)
+
+    for item in sessions:
+        # The scheduler only needs to track Qualifying and Race.
+        if item.get("session_type") not in {"Q", "R"}:
+            continue
+
+        key = item.get("key")
+        year = item.get("year")
+        round_number = item.get("round_number")
+
+        if not key or year is None or round_number is None:
+            continue
+
+        race_date = race_dates.get((year, round_number))
+
+        # Do not consider a weekend actionable unless its Race exists
+        # in the schedule and has passed the completion buffer.
+        if race_date is None:
+            continue
+
+        if race_date + cutoff > now:
             continue
 
         if key in complete:

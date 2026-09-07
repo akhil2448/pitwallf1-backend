@@ -52,6 +52,14 @@ class IngestionConfig:
     session_completion_buffer_hours: float = _env_float(
         "PITWALL_SESSION_COMPLETION_BUFFER_HOURS", 48.0
     )
+    
+    # Oracle scheduler safety: a qualifying session is not considered
+    # actionable until the race for that weekend has finished and this
+    # buffer has elapsed. This allows the complete race weekend to be
+    # ingested together.
+    race_completion_buffer_hours: float = _env_float(
+        "PITWALL_RACE_COMPLETION_BUFFER_HOURS", 3.0
+    )
 
     # Reminder cadence for the Oracle-side scheduler. A changed pending
     # backlog triggers an email immediately; an unchanged backlog is reminded
