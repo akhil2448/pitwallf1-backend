@@ -1,5 +1,6 @@
 import math
 from typing import Literal
+import numpy as np
 import pandas as pd
 
 from app.services.session_cache_service import (
@@ -381,6 +382,465 @@ class QualifyingComparisonService:
                     fastest[sector] = current
 
         return fastest
+    
+    def resample_telemetry_to_reference_distance(
+        self,
+        telemetry: pd.DataFrame,
+        reference_telemetry: pd.DataFrame,
+        reference_distances: np.ndarray,
+    ) -> list[dict]:
+        """
+        Resample telemetry onto a canonical track-distance axis.
+
+        The canonical axis comes from Driver A's reference lap.
+        Each driver's XY telemetry is projected onto that reference
+        track before interpolation.
+        """
+
+        source = (
+            telemetry[
+                [
+                    "Distance",
+                    "Time",
+                    "Speed",
+                    "RPM",
+                    "Throttle",
+                    "Brake",
+                    "nGear",
+                    "X",
+                    "Y",
+                ]
+            ]
+            .dropna(subset=["Distance", "X", "Y"])
+            .copy()
+            .reset_index(drop=True)
+        )
+
+        if len(source) < 2:
+            raise ValueError(
+                "Telemetry must contain at least two valid samples."
+            )
+
+        # Remove repeated source-distance samples.
+        source_distance = source["Distance"].to_numpy(dtype=float)
+
+        unique_indices = np.r_[
+            True,
+            np.diff(source_distance) > 0,
+        ]
+
+        source = source.iloc[unique_indices].reset_index(drop=True)
+
+        source_distance = source["Distance"].to_numpy(dtype=float)
+        source_x = source["X"].to_numpy(dtype=float)
+        source_y = source["Y"].to_numpy(dtype=float)
+
+        if len(source_distance) < 2:
+            raise ValueError(
+                "Telemetry must contain at least two increasing distance samples."
+            )
+
+        # ------------------------------------------------------------
+        # Build canonical reference track segments
+        # ------------------------------------------------------------
+
+        reference = (
+            reference_telemetry[
+                ["Distance", "X", "Y"]
+            ]
+            .dropna(subset=["Distance", "X", "Y"])
+            .copy()
+            .reset_index(drop=True)
+        )
+
+        reference_distance = (
+            reference["Distance"]
+            .to_numpy(dtype=float)
+        )
+
+        reference_x = (
+            reference["X"]
+            .to_numpy(dtype=float)
+        )
+
+        reference_y = (
+            reference["Y"]
+            .to_numpy(dtype=float)
+        )
+
+        reference_unique = np.r_[
+            True,
+            (
+                np.diff(reference_distance) > 0
+            ),
+        ]
+
+        reference_distance = reference_distance[
+            reference_unique
+        ]
+        reference_x = reference_x[
+            reference_unique
+        ]
+        reference_y = reference_y[
+            reference_unique
+        ]
+
+        if len(reference_distance) < 2:
+            raise ValueError(
+                "Reference telemetry must contain at least two valid samples."
+            )
+
+        segment_x = (
+            reference_x[1:] -
+            reference_x[:-1]
+        )
+
+        segment_y = (
+            reference_y[1:] -
+            reference_y[:-1]
+        )
+
+        segment_length_squared = (
+            segment_x * segment_x +
+            segment_y * segment_y
+        )
+
+        # ------------------------------------------------------------
+        # Project each driver's telemetry point onto the reference
+        # track and obtain the canonical reference distance.
+        # ------------------------------------------------------------
+
+        projected_distance = np.empty(
+            len(source),
+            dtype=float,
+        )
+
+        reference_max_distance = float(
+            reference_distance[-1]
+        )
+
+        source_start_distance = float(
+            source_distance[0]
+        )
+
+        source_end_distance = float(
+            source_distance[-1]
+        )
+
+        segment_count = len(reference_distance) - 1
+
+        for index, (x, y, distance) in enumerate(
+            zip(
+                source_x,
+                source_y,
+                source_distance,
+            )
+        ):
+
+            # Use the driver's own distance only to estimate which
+            # portion of the reference track we should search.
+            expected_distance = np.interp(
+                distance,
+                [
+                    source_start_distance,
+                    source_end_distance,
+                ],
+                [
+                    reference_distance[0],
+                    reference_max_distance,
+                ],
+            )
+
+            expected_index = int(
+                np.searchsorted(
+                    reference_distance,
+                    expected_distance,
+                    side="left",
+                )
+            )
+
+            expected_segment = min(
+                max(expected_index, 0),
+                segment_count - 1,
+            )
+
+            # Search a local window around the expected progress.
+            # This prevents projection onto a nearby but wrong section
+            # of the circuit.
+            search_radius = 40
+
+            start_segment = max(
+                0,
+                expected_segment - search_radius,
+            )
+
+            end_segment = min(
+                segment_count - 1,
+                expected_segment + search_radius,
+            )
+
+            indices = np.arange(
+                start_segment,
+                end_segment + 1,
+            )
+
+            x1 = reference_x[indices]
+            y1 = reference_y[indices]
+
+            dx = segment_x[indices]
+            dy = segment_y[indices]
+
+            length_squared = (
+                segment_length_squared[indices]
+            )
+
+            px = x - x1
+            py = y - y1
+
+            factor = (
+                px * dx +
+                py * dy
+            )
+
+            valid_lengths = (
+                length_squared > 0
+            )
+
+            factor = np.divide(
+                factor,
+                length_squared,
+                out=np.zeros_like(factor),
+                where=valid_lengths,
+            )
+
+            factor = np.clip(
+                factor,
+                0.0,
+                1.0,
+            )
+
+            projected_x = (
+                x1 +
+                dx * factor
+            )
+
+            projected_y = (
+                y1 +
+                dy * factor
+            )
+
+            squared_error = (
+                (x - projected_x) ** 2 +
+                (y - projected_y) ** 2
+            )
+
+            best_local_index = int(
+                np.argmin(squared_error)
+            )
+
+            best_segment = int(
+                indices[best_local_index]
+            )
+
+            best_factor = float(
+                factor[best_local_index]
+            )
+
+            d1 = reference_distance[
+                best_segment
+            ]
+
+            d2 = reference_distance[
+                best_segment + 1
+            ]
+
+            projected_distance[index] = (
+                d1 +
+                (d2 - d1) *
+                best_factor
+            )
+
+        # The projection must move monotonically forward around the lap.
+        projected_distance = np.maximum.accumulate(
+            projected_distance
+        )
+
+        projected_distance = np.clip(
+            projected_distance,
+            reference_distance[0],
+            reference_max_distance,
+        )
+
+        # Remove duplicate projected positions.
+        projected_unique_indices = np.r_[
+            True,
+            np.diff(projected_distance) > 0,
+        ]
+
+        projected_distance = projected_distance[
+            projected_unique_indices
+        ]
+
+        source = source.iloc[
+            projected_unique_indices
+        ].reset_index(drop=True)
+
+        if len(projected_distance) < 2:
+            raise ValueError(
+                "Unable to establish a valid canonical track distance."
+            )
+
+        target_distance = np.asarray(
+            reference_distances,
+            dtype=float,
+        )
+
+        # ------------------------------------------------------------
+        # Interpolate telemetry values onto the canonical distance.
+        # ------------------------------------------------------------
+
+        numeric_columns = [
+            "Time",
+            "Speed",
+            "RPM",
+            "Throttle",
+            "X",
+            "Y",
+        ]
+
+        interpolated = {}
+
+        for column in numeric_columns:
+
+            values = (
+                source[column]
+                .dt.total_seconds()
+                .to_numpy(dtype=float)
+                if column == "Time"
+                else source[column]
+                .to_numpy(dtype=float)
+            )
+
+            interpolated[column] = np.interp(
+                target_distance,
+                projected_distance,
+                values,
+            )
+
+        # Brake is binary/categorical.
+        brake_values = (
+            source["Brake"]
+            .astype(bool)
+            .to_numpy()
+        )
+
+        brake_numeric = (
+            brake_values.astype(float)
+        )
+
+        brake_interpolated = np.interp(
+            target_distance,
+            projected_distance,
+            brake_numeric,
+        )
+
+        # Gear is discrete.
+        gear_source = (
+            source["nGear"]
+            .to_numpy(dtype=int)
+        )
+
+        gear_indices = np.searchsorted(
+            projected_distance,
+            target_distance,
+            side="left",
+        )
+
+        gear_indices = np.clip(
+            gear_indices,
+            0,
+            len(gear_source) - 1,
+        )
+
+        rows = []
+
+        for index, distance in enumerate(
+            target_distance
+        ):
+
+            rows.append({
+                "idx": index,
+
+                "rd": round(
+                    float(
+                        distance /
+                        reference_max_distance
+                    )
+                    if reference_max_distance > 0
+                    else 0,
+                    5,
+                ),
+
+                "t": round(
+                    float(
+                        interpolated["Time"][index]
+                    ),
+                    3,
+                ),
+
+                "d": round(
+                    float(distance),
+                    2,
+                ),
+
+                "speed": int(
+                    round(
+                        interpolated["Speed"][index]
+                    )
+                ),
+
+                "rpm": int(
+                    round(
+                        interpolated["RPM"][index]
+                    )
+                ),
+
+                "throttle": round(
+                    float(
+                        interpolated["Throttle"][index]
+                    ),
+                    1,
+                ),
+
+                "brake": (
+                    100
+                    if brake_interpolated[index] >= 0.5
+                    else 0
+                ),
+
+                "gear": int(
+                    gear_source[
+                        gear_indices[index]
+                    ]
+                ),
+
+                "x": round(
+                    float(
+                        interpolated["X"][index]
+                    ),
+                    2,
+                ),
+
+                "y": round(
+                    float(
+                        interpolated["Y"][index]
+                    ),
+                    2,
+                ),
+            })
+
+        return rows
+    
 
     def build_driver_payload(
         self,
@@ -389,6 +849,9 @@ class QualifyingComparisonService:
         driver: str,
         session_part: SessionPart,
         session_fastest_sectors,
+        reference_telemetry: pd.DataFrame,
+        reference_distances: np.ndarray,
+        reference_max_distance: float,
     ):
         """
         Returns telemetry payload for
@@ -418,67 +881,12 @@ class QualifyingComparisonService:
             max_distance
         )
 
-        telemetry_rows = []
-
-        for idx, (_, row) in enumerate(
-            telemetry.iterrows()
-        ):
-
-            normalized_rd = (
-                float(row["Distance"]) / max_distance
-                if max_distance > 0
-                else 0
-            )
-
-            telemetry_rows.append({
-                "idx": idx,
-
-                "rd": round(
-                    normalized_rd,
-                    5
-                ),
-
-                "t": round(
-                    row["Time"].total_seconds(),
-                    3
-                ),
-
-                "d": round(
-                    float(row["Distance"]),
-                    2
-                ),
-
-                "speed": int(
-                    row["Speed"]
-                ),
-
-                "rpm": int(
-                    row["RPM"]
-                ),
-
-                "throttle": round(
-                    float(row["Throttle"]),
-                    1
-                ),
-
-                "brake": 100 if bool(row["Brake"]) else 0,
-
-                "gear": int(
-                    row["nGear"]
-                ),
-
-                "x": round(
-                    float(row["X"]),
-                    2
-                ),
-
-                "y": round(
-                    float(row["Y"]),
-                    2
-                )
-            })
-        
-        
+        telemetry_rows = self.resample_telemetry_to_reference_distance(
+            telemetry,
+            reference_telemetry,
+            reference_distances,
+        )
+             
 
         result_row = (
             session.results
@@ -586,8 +994,8 @@ class QualifyingComparisonService:
                 telemetry_rows
             ),
 
-            "maxDistance": round(
-                max_distance,
+           "maxDistance": round(
+                reference_max_distance,
                 2
             ),
 
@@ -632,6 +1040,28 @@ class QualifyingComparisonService:
             session_part,
         )
 
+        # ----------------------------------------
+        # COMMON REFERENCE DISTANCE AXIS
+        # ----------------------------------------
+
+        reference_lap = self.get_fastest_lap(
+            year,
+            round_number,
+            driver_a,
+            session_part,
+        )
+
+        reference_telemetry = reference_lap.get_telemetry()
+
+        reference_distances = (
+            reference_telemetry["Distance"]
+            .to_numpy(dtype=float)
+        )
+
+        reference_max_distance = float(
+            reference_telemetry["Distance"].max()
+        )
+        
         driver_a_payload = (
             self.build_driver_payload(
                 year,
@@ -639,6 +1069,9 @@ class QualifyingComparisonService:
                 driver_a,
                 session_part,
                 session_fastest_sectors,
+                reference_telemetry,
+                reference_distances,
+                reference_max_distance,
             )
         )
 
@@ -653,6 +1086,9 @@ class QualifyingComparisonService:
                     driver_b,
                     session_part,
                     session_fastest_sectors,
+                    reference_telemetry,
+                    reference_distances,
+                    reference_max_distance,
                 )
             )
             
