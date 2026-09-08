@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from dotenv import load_dotenv
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,6 +32,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CACHE_DIR = PROJECT_ROOT / "cache"
 DEFAULT_METADATA_DIR = PROJECT_ROOT / ".pitwall-ingestion"
 
+load_dotenv()
+
 
 @dataclass(frozen=True)
 class IngestionConfig:
@@ -47,10 +50,10 @@ class IngestionConfig:
         datetime.now(timezone.utc).year,
     )
 
-    # Future-ingestion safety: do not attempt to acquire a newly finished
-    # session until upstream data has had time to settle.
+    # Future-ingestion safety: wait for a short period after a session
+    # finishes so upstream data has time to settle.
     session_completion_buffer_hours: float = _env_float(
-        "PITWALL_SESSION_COMPLETION_BUFFER_HOURS", 48.0
+        "PITWALL_SESSION_COMPLETION_BUFFER_HOURS", 3.0
     )
     
     # Oracle scheduler safety: a qualifying session is not considered

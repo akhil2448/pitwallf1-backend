@@ -28,6 +28,7 @@ class SessionRecord:
     last_error: str | None = None
     retries: int = 0
     size_bytes: int | None = None
+    cache_path: str | None = None
     files: list[str] = field(default_factory=list)
     validation: dict[str, Any] = field(default_factory=dict)
 
