@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from dotenv import load_dotenv
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,8 +30,6 @@ def _env_float(name: str, default: float) -> float:
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CACHE_DIR = PROJECT_ROOT / "cache"
 DEFAULT_METADATA_DIR = PROJECT_ROOT / ".pitwall-ingestion"
-
-load_dotenv()
 
 
 @dataclass(frozen=True)
