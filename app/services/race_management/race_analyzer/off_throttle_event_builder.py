@@ -404,19 +404,25 @@ class OffThrottleEventBuilder:
             
         
         max_speed_loss = max(
-            (
-                event["speedLoss"]
-                for event in events
+            0.001,
+            max(
+                (
+                    event["speedLoss"]
+                    for event in events
+                ),
+                default=0.0,
             ),
-            default=0.001,
         )
 
         max_rpm_loss = max(
-            (
-                event["rpmLoss"]
-                for event in events
+            1,
+            max(
+                (
+                    event["rpmLoss"]
+                    for event in events
+                ),
+                default=0,
             ),
-            default=1,
         )
 
         max_distance = max(
