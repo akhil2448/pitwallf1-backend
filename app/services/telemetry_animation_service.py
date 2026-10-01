@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from app.utils.time_utils import convert_all_timedelta_columns
+from app.services.track_metrics_service import apply_coordinate_transform
 
 
 def _convert_session_time_column(series):
@@ -218,6 +219,20 @@ def build_driver_telemetry_chunks(
         .interpolate(method="linear")
         .reset_index()
     )
+    
+    # --------------------------------------------------
+    # SHARED COORDINATE TRANSFORMATION
+    # --------------------------------------------------
+
+    coordinate_transform = track_metrics["coordinateTransform"]
+
+    transformed_xy = apply_coordinate_transform(
+        resampled[["X", "Y"]].to_numpy(),
+        coordinate_transform,
+    )
+
+    resampled["X"] = transformed_xy[:, 0]
+    resampled["Y"] = transformed_xy[:, 1]
 
     # Fix LapNumber AFTER resample
     resampled["LapNumber"] = (

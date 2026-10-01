@@ -1,7 +1,10 @@
 import numpy as np
 import json
 
-from app.services.track_metrics_service import build_track_metrics
+from app.services.track_metrics_service import (
+    build_track_metrics,
+    apply_coordinate_transform,
+)
 
 def generate_track_map(
     session,
@@ -42,26 +45,16 @@ def generate_track_map(
     track_length = track_metrics["trackLength"]
 
 
-    # Rotate track using circuit info
-    circuit_info = session.get_circuit_info()
-    angle = np.deg2rad(circuit_info.rotation)
+    # --------------------------------------------------
+    # SHARED COORDINATE TRANSFORMATION
+    # --------------------------------------------------
 
-    rotation_matrix = np.array([
-        [np.cos(angle),  np.sin(angle)],
-        [-np.sin(angle), np.cos(angle)]
-    ])
+    coordinate_transform = track_metrics["coordinateTransform"]
 
-    rotated = telemetry[["X", "Y"]].to_numpy().dot(rotation_matrix)
-
-    # ---- Center the track ----
-    xs = rotated[:, 0]
-    ys = rotated[:, 1]
-
-    center_x = (xs.max() + xs.min()) / 2
-    center_y = (ys.max() + ys.min()) / 2
-
-    rotated[:, 0] -= center_x
-    rotated[:, 1] -= center_y
+    rotated = apply_coordinate_transform(
+        telemetry[["X", "Y"]].to_numpy(),
+        coordinate_transform,
+    )
 
     # ---- Build coordinates array ----
     coordinates = []
