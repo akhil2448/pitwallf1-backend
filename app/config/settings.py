@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 import os
+from pathlib import Path
 
 load_dotenv()
 
@@ -27,6 +28,21 @@ class Settings:
     LOG_LEVEL = os.getenv(
         "LOG_LEVEL",
         "INFO"
+    )
+    
+    # Session manifest used by the race-selection data indicators.
+    #
+    # Local: repository/.pitwall-ingestion/future_manifest.json
+    # Production: /app/metadata/session_manifest.json
+    SESSION_MANIFEST_PATH = Path(
+        os.getenv(
+            "SESSION_MANIFEST_PATH",
+            str(
+                Path(__file__).resolve().parents[2]
+                / ".pitwall-ingestion"
+                / "future_manifest.json"
+            ),
+        )
     )
 
 

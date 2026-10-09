@@ -247,9 +247,11 @@ jobs:
                 -p 127.0.0.1:8000:8000 \
                 -e ENV=production \
                 -e FASTF1_CACHE_DIR=/app/cache \
+                -e SESSION_MANIFEST_PATH=/app/metadata/session_manifest.json \
                 -e FRONTEND_URL=https://pitwallf1.pages.dev \
                 -e LOG_LEVEL=INFO \
                 -v /opt/pitwall/cache:/app/cache \
+                -v /opt/pitwall/metadata:/app/metadata:ro \
                 --restart unless-stopped \
                 "$CURRENT_IMAGE"; then
 
@@ -332,9 +334,11 @@ jobs:
               -p 127.0.0.1:8000:8000 \
               -e ENV=production \
               -e FASTF1_CACHE_DIR=/app/cache \
+              -e SESSION_MANIFEST_PATH=/app/metadata/session_manifest.json \
               -e FRONTEND_URL=https://pitwallf1.pages.dev \
               -e LOG_LEVEL=INFO \
               -v /opt/pitwall/cache:/app/cache \
+              -v /opt/pitwall/metadata:/app/metadata:ro \
               --restart unless-stopped \
               "$IMAGE"; then
 

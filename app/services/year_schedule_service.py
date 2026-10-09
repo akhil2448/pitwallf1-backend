@@ -2,6 +2,9 @@ import fastf1
 import pandas as pd
 from datetime import datetime,timezone
 
+from app.services.session_data_availability_service import (
+    SessionDataAvailabilityService,
+)
 
 def _make_json_safe(value):
     if pd.isna(value):
@@ -30,6 +33,8 @@ def generate_year_schedule(year: int) -> dict:
     now = datetime.now(timezone.utc)
 
     races = []
+    
+    availability_service = SessionDataAvailabilityService()
 
     for _, row in schedule_df.iterrows():
 
@@ -60,7 +65,14 @@ def generate_year_schedule(year: int) -> dict:
             "raceDateUtc": _make_json_safe(row["Session5DateUtc"]),
             "raceLocalDisplay": _format_local_display(
                 row["Session5Date"]
-            )
+            ),
+            
+            "qualifyingDataStatus": availability_service.get_session_status(
+                year, int(row["RoundNumber"]), "Q"
+            ),
+            "raceDataStatus": availability_service.get_session_status(
+                year, int(row["RoundNumber"]), "R"
+            ),
         })
 
     return {
