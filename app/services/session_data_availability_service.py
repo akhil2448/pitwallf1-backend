@@ -1,9 +1,11 @@
 
 import json
 from pathlib import Path
+import logging
 
 from app.config.settings import settings
 
+logger = logging.getLogger(__name__)
 
 class SessionDataAvailabilityService:
     """Read ingestion statuses from the existing session manifest."""
@@ -15,25 +17,45 @@ class SessionDataAvailabilityService:
             else settings.SESSION_MANIFEST_PATH
         )
 
-    def get_session_status(self, year: int, round_number: int, session_code: str) -> str:
-        """Return the manifest status, or 'missing' if no record exists."""
+    def get_session_status(
+        self,
+        year: int,
+        round_number: int,
+        session_code: str,
+    ) -> str | None:
+        """Return the manifest status, or None if it cannot be determined."""
+
         key = f"{year}-{round_number:02d}-{session_code}"
 
         try:
             with self.manifest_path.open("r", encoding="utf-8") as file:
                 manifest = json.load(file)
-        except FileNotFoundError:
-            return "missing"
-        except (json.JSONDecodeError, OSError):
-            return "missing"
 
-        record = manifest.get("sessions", {}).get(key)
+            if not isinstance(manifest, dict):
+                return None
 
-        if not isinstance(record, dict):
-            return "missing"
+            sessions = manifest.get("sessions")
 
-        status = record.get("status", "missing")
-        return status if isinstance(status, str) else "missing"
+            if not isinstance(sessions, dict):
+                return None
+
+            record = sessions.get(key)
+
+            if not isinstance(record, dict):
+                return None
+
+            status = record.get("status")
+
+            return status if isinstance(status, str) else None
+
+        except Exception:
+            # Availability is optional; do not break schedule generation.
+            logger.debug(
+                "Unable to determine session status for %s",
+                key,
+                exc_info=True,
+            )
+            return None
 
     def is_session_available(
         self, year: int, round_number: int, session_code: str

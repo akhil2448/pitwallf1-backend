@@ -37,11 +37,11 @@ class SessionDataAvailabilityServiceTests(unittest.TestCase):
             self.service.is_session_available(2026, 7, "R")
         )
 
-    def test_missing_session_is_not_available(self):
-        self.assertEqual(
-            self.service.get_session_status(2026, 8, "R"),
-            "missing",
+    def test_missing_session_returns_none_and_is_unavailable(self):
+        self.assertIsNone(
+            self.service.get_session_status(2026, 8, "R")
         )
+
         self.assertFalse(
             self.service.is_session_available(2026, 8, "R")
         )
@@ -52,6 +52,16 @@ class SessionDataAvailabilityServiceTests(unittest.TestCase):
         )
         self.assertFalse(
             service.is_session_available(2026, 7, "Q")
+        )
+    
+    def test_invalid_manifest_returns_none(self):
+        self.manifest_path.write_text(
+            "{invalid json",
+            encoding="utf-8",
+        )
+
+        self.assertIsNone(
+            self.service.get_session_status(2026, 7, "Q")
         )
 
 
