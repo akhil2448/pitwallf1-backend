@@ -38,7 +38,7 @@ def build_schedule(
     # Configure FastF1 only when we actually fetch a schedule. This keeps
     # Oracle-side scheduler imports FastF1-free and prevents default-cache
     # creation on the server.
-    fastf1.Cache.enable_cache(config.cache_dir)
+    fastf1.Cache.configure(cache_dir=config.cache_dir)
 
     now = only_sessions_ended_by or datetime.now(timezone.utc)
     planned: list[PlannedSession] = []

@@ -15,7 +15,7 @@ from .config import config
 #
 # Explicitly point FastF1 at PitWall's real project cache before
 # creating/loading any sessions.
-fastf1.Cache.enable_cache(config.cache_dir)
+fastf1.Cache.configure(cache_dir=config.cache_dir)
 
 
 @dataclass
