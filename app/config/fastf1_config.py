@@ -11,5 +11,7 @@ def init_fastf1_cache() -> None:
 
     # Production serves only data already present in its cache.
     # Local development and ingestion remain online.
-    if settings.ENV.lower() == "production":
-        fastf1.Cache.offline_mode(True)
+    
+    ## REMOVING THIS LOGIC AS IT BREAKS THE JOLPICA RESULTS CALL
+    # if settings.ENV.lower() == "production":
+    #     fastf1.Cache.offline_mode(True)
